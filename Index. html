@@ -45,6 +45,26 @@ button:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
 .moves button{height:44px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:700 1rem ui-monospace,Menlo,monospace;cursor:pointer}
 .legend{font-size:.85rem;color:var(--mute);margin:12px 0 0}
 .mem{display:flex;align-items:center;gap:10px;padding:6px 0}.mem span{flex:1}.mem meter{width:90px}.mem b{direction:ltr;min-width:34px;text-align:left}
+.ai-card{margin-top:16px}
+.ai-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.ai-badge{font-size:.8rem;color:var(--mute);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+.ai-key{margin:8px 0 12px;padding:10px 12px;border:1px dashed var(--line);border-radius:12px;background:var(--bg)}
+.ai-key summary{cursor:pointer;font-weight:600;font-size:.9rem}
+.ai-key-row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.ai-key-row input,.ai-form input{flex:1;min-width:180px;height:42px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:0 12px;font:inherit}
+.ai-key-note{font-size:.8rem;color:var(--mute);margin:6px 0 0}
+.ai-key-note a{color:var(--acc)}
+.ai-quick{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.ai-form{display:flex;gap:8px;flex-wrap:wrap}
+.ai-log{margin-top:12px;display:flex;flex-direction:column;gap:10px}
+.ai-msg{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--bg)}
+.ai-msg.user{background:transparent}
+.ai-msg h3{margin:0 0 4px;font-size:.85rem;color:var(--mute)}
+.ai-msg p{margin:0 0 8px;white-space:pre-wrap}
+.ai-msg p:last-child{margin-bottom:0}
+.ai-msg code{display:block;direction:ltr;text-align:left;font:600 1rem/1.5 ui-monospace,Menlo,monospace;margin:6px 0 8px;word-spacing:.35em}
+.ai-tip{font-size:.88rem;color:var(--mute)}
+.ai-err{border-color:var(--acc);color:var(--acc)}
 </style>
 </head>
 <body>
@@ -57,6 +77,32 @@ button:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
 <div class="row"><button class="btn alt" id="reset">إعادة المكعب</button><button class="btn alt" id="mix">اخلط المكعب</button></div>
 <p class="legend">جرّب الحركات بنفسك (حرف = مع عقارب الساعة، ’ = عكسها):</p>
 <div class="moves" id="moves"></div>
+<section class="lesson ai-card" aria-label="مدرب روبيك الذكي">
+  <div class="ai-head">
+    <h2>مدرب روبيك الذكي (Gemini)</h2>
+    <span class="ai-badge" id="ai-state">الحالة: المكعب محلول</span>
+  </div>
+  <p class="sub">اسأل المدرب عن وضع مكعبك الحالي أو اطلب تلميحًا وتمرينًا، وسيقترح لك الشرح والحركات لتشغيلها مباشرةً.</p>
+  <details class="ai-key" id="ai-key-box">
+    <summary>إعداد مفتاح Gemini API</summary>
+    <div class="ai-key-row">
+      <input type="password" id="ai-key" placeholder="أدخل مفتاح GEMINI_API_KEY" autocomplete="off">
+      <button type="button" class="btn alt" id="ai-save-key">حفظ للجلسة</button>
+    </div>
+    <p class="ai-key-note">يُحفظ المفتاح في ذاكرة الجلسة بالمتصفح فقط (sessionStorage). احصل على مفتاح من <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>.</p>
+  </details>
+  <div class="ai-quick">
+    <button type="button" class="btn" id="ai-analyze">حلّل وضعي الحالي</button>
+    <button type="button" class="btn alt" id="ai-hint">تلميح للخطوة الحالية</button>
+    <button type="button" class="btn alt" id="ai-drill">تمرين سريع</button>
+    <button type="button" class="btn alt" id="ai-reset">محادثة جديدة</button>
+  </div>
+  <form class="ai-form" id="ai-form">
+    <input type="text" id="ai-q" placeholder="اسأل المدرب عن أي حركة أو خطوة..." required>
+    <button type="submit" class="btn" id="ai-send">اسأل</button>
+  </form>
+  <div class="ai-log" id="ai-log" aria-live="polite"></div>
+</section>
 </main>
 <script>
 const S=56,COL={U:'#ffffff',D:'#ffd500',F:'#009b48',B:'#0046ad',R:'#b71234',L:'#ff5800'};
@@ -90,7 +136,9 @@ const mm=rotM(ax,A);L.forEach(c=>{c.p=mv(mm,c.p).map(Math.round);c.R=mul(mm,c.R)
 let q=Promise.resolve();
 const enq=fn=>{q=q.then(fn);return q};
 const disp=t=>t.replace(/'/g,'’');
-const run=(s,fast)=>enq(async()=>{dur=fast?110:380;for(const t of s.split(' ')){cur.textContent=disp(t);await turn(t)}cur.textContent=''});
+const moveHist=[];
+const pushHist=tok=>{moveHist.push(tok);if(moveHist.length>16)moveHist.shift()};
+const run=(s,fast)=>enq(async()=>{dur=fast?110:380;for(const t of s.trim().split(/\s+/).filter(Boolean)){cur.textContent=disp(t);pushHist(t);await turn(t)}cur.textContent='';updateAiState()});
 const STEPS=[
 {t:'تعرّف على المكعب والرموز',d:'لكل وجه حرف: U أعلى، D أسفل، R يمين، L يسار، F أمام، B خلف. الحرف وحده يعني ربع لفّة مع عقارب الساعة، والحرف مع ’ يعني عكس العقارب، والرقم 2 يعني لفّتين. المراكز لا تتحرك أبدًا، وهي التي تحدد لون كل وجه.',a:[{l:'شاهد تسلسل بسيط',s:"R U R' U'"}]},
 {t:'الصليب الأبيض',d:'ضع المركز الأبيض لأعلى، ثم كوّن علامة + بيضاء حوله، بحيث يطابق لون الحافة الجانبية لون مركز الوجه المجاور. هذه الخطوة تُحلّ بالتفكير وليس بخوارزمية: جرّب الحركات بنفسك من الأزرار بالأسفل.',a:[]},
@@ -101,7 +149,9 @@ const STEPS=[
 {t:'اللمسة الأخيرة',d:'بقي ترتيب الحواف الصفراء. ثبّت وجهين متجاورين مناسبين وكرّر خوارزمية التبديل حتى تتطابق كل الحواف مع المراكز. أحسنت، المكعب انحلّ.',a:[{l:'تبديل الحواف',s:"R U' R U R U R U' R' U' R2"}]}
 ];
 const stEl=document.getElementById('steps'),ls=document.getElementById('lesson');
+let curStep=0;
 function show(i){
+curStep=i;
 [...stEl.children].forEach((b,j)=>b.setAttribute('aria-current',j===i));
 const s=STEPS[i];ls.innerHTML='<h2></h2><p></p>';ls.firstChild.textContent=(i+1)+'. '+s.t;ls.lastChild.textContent=s.d;
 s.a.forEach(a=>{const w=document.createElement('div');w.className='alg';
@@ -111,7 +161,7 @@ w.children[2].onclick=()=>run(a.s);ls.appendChild(w)})}
 STEPS.forEach((s,i)=>{const b=document.createElement('button');b.textContent=i+1;b.setAttribute('role','tab');b.setAttribute('aria-label','الخطوة '+(i+1));b.onclick=()=>show(i);stEl.appendChild(b)});
 const mvEl=document.getElementById('moves');
 ["U","U'","D","D'","R","R'","L","L'","F","F'","B","B'"].forEach(t=>{const b=document.createElement('button');b.textContent=disp(t);b.onclick=()=>run(t);mvEl.appendChild(b)});
-document.getElementById('reset').onclick=()=>enq(()=>{build();cur.textContent=''});
+document.getElementById('reset').onclick=()=>enq(()=>{build();moveHist.length=0;cur.textContent='';updateAiState()});
 document.getElementById('mix').onclick=()=>{const f='UDRLFB',a=[];let l='';for(let i=0;i<16;i++){let x;do{x=f[Math.random()*6|0]}while(x===l);l=x;a.push(x+(Math.random()<.5?"'":''))}run(a.join(' '),true)};
 let rx=-28,ry=-38,dn=false,lx=0,ly=0;const sc=document.getElementById('scene');
 let full=false,zm=1;const view=()=>rig.style.transform=`scale(${zm}) rotateX(${rx}deg) rotateY(${ry}deg)`;
@@ -126,7 +176,7 @@ sc.onpointermove=e=>{if(!dn)return;
 if(g){if(g.done||Math.hypot(e.clientX-g.x,e.clientY-g.y)<14)return;g.done=true;
 const dx=e.clientX-g.x,dy=e.clientY-g.y,ps=g.c.p.map((v,i)=>v+g.n[i]/2);let best=null;
 for(let i=0;i<3;i++){if(g.n[i])continue;const s=scr(dv(i,ps)),d=dx*s[0]+dy*s[1];if(!best||Math.abs(d)>Math.abs(best.d))best={i,d}}
-const idx=g.c.p[best.i],sg=best.d>0?1:-1;enq(()=>spin(best.i,idx,sg));return}
+const idx=g.c.p[best.i],sg=best.d>0?1:-1;enq(async()=>{await spin(best.i,idx,sg);updateAiState()});return}
 ry+=(e.clientX-lx)*.6;rx=Math.max(-80,Math.min(80,rx-(e.clientY-ly)*.6));lx=e.clientX;ly=e.clientY;view()};
 sc.onpointerup=sc.onpointercancel=()=>{dn=false;g=null};
 const fsb=document.getElementById('fs'),de=document.documentElement;
@@ -137,7 +187,99 @@ else{if(document.fullscreenElement)document.exitFullscreen();screen.orientation&
 fsb.onclick=()=>setFull(!full);
 addEventListener('resize',()=>{if(full)fit()});
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&full)setFull(false)});
-build();show(0);
+const COLOR_NAME={'#ffffff':'W','#ffd500':'Y','#009b48':'G','#0046ad':'B','#b71234':'R','#ff5800':'O'};
+const rgbToCode=bg=>{if(!bg)return'?';const m=bg.match(/\d+/g);if(m&&m.length>=3){const hex='#'+m.slice(0,3).map(x=>(+x).toString(16).padStart(2,'0')).join('');return COLOR_NAME[hex]||hex}return COLOR_NAME[bg.toLowerCase()]||bg};
+function getCubeState(){
+  const faces={U:Array(9).fill('?'),D:Array(9).fill('?'),F:Array(9).fill('?'),B:Array(9).fill('?'),R:Array(9).fill('?'),L:Array(9).fill('?')};
+  cubies.forEach(c=>{
+    const [x,y,z]=c.p;
+    [...c.el.children].forEach(fEl=>{
+      if(!fEl.style.background)return;
+      const wn=mv(c.R,N0[fEl.classList[1]]).map(Math.round),code=rgbToCode(fEl.style.background);
+      if(wn[1]===-1)faces.U[(z+1)*3+(x+1)]=code;
+      else if(wn[1]===1)faces.D[(1-z)*3+(x+1)]=code;
+      else if(wn[2]===1)faces.F[(y+1)*3+(x+1)]=code;
+      else if(wn[2]===-1)faces.B[(y+1)*3+(1-x)]=code;
+      else if(wn[0]===1)faces.R[(y+1)*3+(1-z)]=code;
+      else if(wn[0]===-1)faces.L[(y+1)*3+(z+1)]=code;
+    });
+  });
+  const isSolved=Object.values(faces).every(arr=>arr.every(v=>v===arr[4]));
+  return{isSolved,faces,currentStep:curStep+1,currentStepTitle:STEPS[curStep].t,recentMoves:moveHist.slice(-12)};
+}
+const aiStateEl=document.getElementById('ai-state');
+const updateAiState=()=>{const st=getCubeState();aiStateEl.textContent=st.isSolved?'الحالة: المكعب محلول ✓':'الحالة: المكعب قيد التدريب'};
+const aiKeyInput=document.getElementById('ai-key'),aiKeyBox=document.getElementById('ai-key-box'),aiLog=document.getElementById('ai-log'),aiForm=document.getElementById('ai-form'),aiQ=document.getElementById('ai-q');
+aiKeyInput.value=sessionStorage.getItem('gemini_api_key')||'';
+if(!aiKeyInput.value)aiKeyBox.open=true;
+document.getElementById('ai-save-key').onclick=()=>{const k=aiKeyInput.value.trim();if(k){sessionStorage.setItem('gemini_api_key',k);aiKeyBox.open=false}else{sessionStorage.removeItem('gemini_api_key')}};
+let prevInteractionId=null,aiBusy=false;
+const normalizeMoves=s=>String(s||'').replace(/’/g,"'").trim().split(/\s+/).filter(t=>/^[UDRLFB](2|')?$/.test(t)).join(' ');
+function addAiCard({role,label,text,moves,step,tip,isError}){
+  const card=document.createElement('div');card.className='ai-msg'+(role==='user'?' user':'')+(isError?' ai-err':'');
+  const h=document.createElement('h3');h.textContent=label;card.appendChild(h);
+  const p=document.createElement('p');p.textContent=text;card.appendChild(p);
+  if(tip){const tp=document.createElement('p');tp.className='ai-tip';tp.textContent='نصيحة: '+tip;card.appendChild(tp)}
+  const clean=normalizeMoves(moves);
+  if(clean||Number.isInteger(step)){
+    if(clean){const cd=document.createElement('code');cd.textContent=disp(clean);card.appendChild(cd)}
+    const row=document.createElement('div');row.className='row';
+    if(clean){const rb=document.createElement('button');rb.type='button';rb.className='btn';rb.textContent='شغّل الحركات على المكعب';rb.onclick=()=>run(clean);row.appendChild(rb)}
+    if(Number.isInteger(step)&&step>=1&&step<=STEPS.length&&step!==curStep+1){const sb=document.createElement('button');sb.type='button';sb.className='btn alt';sb.textContent='انتقل للخطوة '+step;sb.onclick=()=>show(step-1);row.appendChild(sb)}
+    if(row.children.length)card.appendChild(row);
+  }
+  aiLog.prepend(card);
+}
+async function askGemini(question){
+  if(aiBusy)return;
+  const apiKey=(aiKeyInput.value||sessionStorage.getItem('gemini_api_key')||'').trim();
+  if(!apiKey){aiKeyBox.open=true;addAiCard({role:'coach',label:'المدرب',text:'يرجى إدخال مفتاح Gemini API أولًا من إعداد المفتاح بالأعلى.',isError:true});return}
+  sessionStorage.setItem('gemini_api_key',apiKey);
+  aiBusy=true;
+  const sendBtn=document.getElementById('ai-send');sendBtn.disabled=true;sendBtn.textContent='يفكّر...';
+  addAiCard({role:'user',label:'أنت',text:question});
+  const st=getCubeState();
+  const payload={
+    model:'gemini-4-hydrogen',
+    system_instruction:'أنت مدرب مكعب روبيك عربي ودود للمبتدئين داخل تطبيق تعليمي من 7 خطوات: 1-التعرّف والرموز، 2-الصليب الأبيض، 3-زوايا الطبقة الأولى، 4-الطبقة الثانية، 5-الصليب الأصفر، 6-ترتيب الزوايا الصفراء، 7-اللمسة الأخيرة. الألوان: W أبيض(U)، Y أصفر(D)، G أخضر(F)، B أزرق(B)، R أحمر(R)، O برتقالي(L). استخدم حركات قياسية صالحة فقط في suggested_moves مثل R U R\' U\' (مسموح فقط U D R L F B مع \' أو 2). اجعل الشرح بالعربية واضحًا ومباشرًا.',
+    input:JSON.stringify({question,cube_state:st}),
+    response_format:{
+      type:'text',
+      mime_type:'application/json',
+      schema:{
+        type:'object',
+        properties:{
+          explanation:{type:'string',description:'شرح واضح ومختصر بالعربية للمستخدم'},
+          suggested_moves:{type:'string',description:"تسلسل حركات روبيك قياسي مفصول بمسافة مثل R U R' U' أو نص فارغ"},
+          recommended_step:{type:'integer',minimum:1,maximum:7,description:'رقم الخطوة الأنسب من 1 إلى 7'},
+          tip:{type:'string',description:'نصيحة سريعة للمبتدئ'}
+        },
+        required:['explanation','suggested_moves','recommended_step']
+      }
+    }
+  };
+  if(prevInteractionId)payload.previous_interaction_id=prevInteractionId;
+  try{
+    const res=await fetch('https://generativelanguage.googleapis.com/v1/interactions',{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},body:JSON.stringify(payload)});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(data?.error?.message||('HTTP '+res.status));
+    if(data.id)prevInteractionId=data.id;
+    const raw=(data.steps||[]).filter(s=>s.type==='model_output').flatMap(s=>s.content||[]).filter(c=>c.type==='text').map(c=>c.text||'').join('');
+    let parsed;
+    try{parsed=JSON.parse(raw)}catch{parsed={explanation:raw||'تعذّر تحليل استجابة النموذج.',suggested_moves:'',recommended_step:curStep+1}}
+    addAiCard({role:'coach',label:'مدرب Gemini',text:parsed.explanation||'',moves:parsed.suggested_moves,step:parsed.recommended_step,tip:parsed.tip});
+  }catch(err){
+    addAiCard({role:'coach',label:'تنبيه',text:'تعذّر الاتصال بـ Gemini API: '+(err&&err.message?err.message:String(err)),isError:true});
+  }finally{
+    aiBusy=false;sendBtn.disabled=false;sendBtn.textContent='اسأل';
+  }
+}
+document.getElementById('ai-analyze').onclick=()=>askGemini('حلّل حالة المكعب الحالية وأخبرني أين أنا وما الخطوة المناسبة الآن.');
+document.getElementById('ai-hint').onclick=()=>askGemini('أعطني تلميحًا واضحًا ومثال حركات للخطوة الحالية ('+STEPS[curStep].t+').');
+document.getElementById('ai-drill').onclick=()=>askGemini('اقترح لي تمرينًا قصيرًا بحركات روبيك لأتدرب عليه الآن واشرح هدفه.');
+document.getElementById('ai-reset').onclick=()=>{prevInteractionId=null;aiLog.innerHTML=''};
+aiForm.onsubmit=e=>{e.preventDefault();const v=aiQ.value.trim();if(!v)return;aiQ.value='';askGemini(v)};
+build();show(0);updateAiState();
 </script>
 </body>
 </html>
